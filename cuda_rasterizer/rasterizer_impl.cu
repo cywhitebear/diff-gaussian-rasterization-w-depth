@@ -217,7 +217,9 @@ int CudaRasterizer::Rasterizer::forward(
 	const bool prefiltered,
 	float* out_color,
 	float* out_depth,
-	int* radii)
+	int* radii,
+	int* out_gaussian_ids,
+	float* out_transmittance_alpha)
 {
 	const float focal_y = height / (2.0f * tan_fovy);
 	const float focal_x = width / (2.0f * tan_fovx);
@@ -333,7 +335,9 @@ int CudaRasterizer::Rasterizer::forward(
 		background,
 		out_color,
 		geomState.depths,
-		out_depth);
+		out_depth,
+		out_gaussian_ids,
+		out_transmittance_alpha);
 
 	return num_rendered;
 }

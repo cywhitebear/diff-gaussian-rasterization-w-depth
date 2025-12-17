@@ -61,7 +61,9 @@ namespace FORWARD
 		const float* bg_color,
 		float* out_color,
 		const float* depth,
-	    float* out_depth);
+	    float* out_depth,
+	    int* out_gaussian_ids,
+	    float* out_transmittance_alpha);
 }
 
 

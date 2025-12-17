@@ -272,7 +272,9 @@ renderCUDA(
 	const float* __restrict__ bg_color,
 	float* __restrict__ out_color,
 	const float* __restrict__ depth,
-	float* __restrict__ out_depth)
+	float* __restrict__ out_depth,
+	int* __restrict__ out_gaussian_ids,
+	float* __restrict__ out_transmittance_alpha)
 {
 	// Identify current tile and associated min/max pixel range.
 	auto block = cg::this_thread_block();
@@ -304,6 +306,11 @@ renderCUDA(
 	uint32_t contributor = 0;
 	uint32_t last_contributor = 0;
 	float C[CHANNELS] = { 0 };
+	// USplat4D: Track contributions for uncertainty computation
+	const int MAX_CONTRIBS = 32;
+	int pixel_gaussian_ids[MAX_CONTRIBS];
+	float pixel_transmittance_alpha[MAX_CONTRIBS];
+	int pixel_contrib_count = 0;
 // 	float D = 0.0f;  // Mean Depth
     float D = 15.0f;  // Median Depth. TODO: This is a hack setting max_depth to 15
 
@@ -356,6 +363,14 @@ renderCUDA(
 				continue;
 			}
 
+			// USplat4D: Store contribution data
+			if (pixel_contrib_count < MAX_CONTRIBS)
+			{
+				pixel_gaussian_ids[pixel_contrib_count] = collected_id[j];
+				pixel_transmittance_alpha[pixel_contrib_count] = T * alpha;
+				pixel_contrib_count++;
+			}
+
 			// Eq. (3) from 3D Gaussian splatting paper.
 			for (int ch = 0; ch < CHANNELS; ch++)
 				C[ch] += features[collected_id[j] * CHANNELS + ch] * alpha * T;
@@ -377,6 +392,25 @@ renderCUDA(
 			// Keep track of last range entry to update this
 			// pixel.
 			last_contributor = contributor;
+		}
+	}
+
+	// USplat4D: Write contribution statistics
+	if (inside && out_gaussian_ids != nullptr)
+	{
+		for (int i = 0; i < MAX_CONTRIBS; i++)
+		{
+			const int idx = pix_id * MAX_CONTRIBS + i;
+			if (i < pixel_contrib_count)
+			{
+				out_gaussian_ids[idx] = pixel_gaussian_ids[i];
+				out_transmittance_alpha[idx] = pixel_transmittance_alpha[i];
+			}
+			else
+			{
+				out_gaussian_ids[idx] = -1;
+				out_transmittance_alpha[idx] = 0.0f;
+			}
 		}
 	}
 
@@ -405,7 +439,9 @@ void FORWARD::render(
 	const float* bg_color,
 	float* out_color,
 	const float* depth,
-	float* out_depth)
+	float* out_depth,
+	int* out_gaussian_ids,
+	float* out_transmittance_alpha)
 {
 	renderCUDA<NUM_CHANNELS> << <grid, block >> > (
 		ranges,
@@ -419,7 +455,9 @@ void FORWARD::render(
 		bg_color,
 		out_color,
 		depth,
-		out_depth);
+		out_depth,
+		out_gaussian_ids,
+		out_transmittance_alpha);
 }
 
 void FORWARD::preprocess(int P, int D, int M,
